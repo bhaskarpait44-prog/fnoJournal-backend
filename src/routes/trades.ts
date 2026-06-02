@@ -40,10 +40,16 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
     const { id } = req.params;
     const updateData = req.body;
 
-    const trade = await prisma.trade.update({
-      where: { id, user_id: userId },
+    const result = await prisma.trade.updateMany({
+      where: { id: id as string, user_id: userId },
       data: updateData,
     });
+
+    if (result.count === 0) {
+      return res.status(404).json({ error: 'Trade not found or unauthorized' });
+    }
+
+    const trade = await prisma.trade.findUnique({ where: { id: id as string } });
     res.json(trade);
   } catch (error) {
     res.status(500).json({ error: 'Error updating trade' });
@@ -55,9 +61,14 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
     const userId = req.user!.id;
     const { id } = req.params;
 
-    await prisma.trade.delete({
-      where: { id, user_id: userId },
+    const result = await prisma.trade.deleteMany({
+      where: { id: id as string, user_id: userId },
     });
+
+    if (result.count === 0) {
+      return res.status(404).json({ error: 'Trade not found or unauthorized' });
+    }
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Error deleting trade' });
