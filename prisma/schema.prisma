@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String        @id @default(uuid())
+  email         String        @unique
+  password      String
+  name          String?
+  avatar_url    String?
+  updated_at    DateTime      @default(now()) @updatedAt
+  created_at    DateTime      @default(now())
+  
+  subscription  Subscription?
+  trades        Trade[]
+
+  @@map("users")
+}
+
+model Subscription {
+  id                       String    @id @default(uuid())
+  user_id                  String    @unique
+  razorpay_subscription_id String?   @unique
+  status                   String
+  plan_id                  String
+  current_period_end       DateTime?
+  trial_ends_at            DateTime?
+  updated_at               DateTime  @default(now()) @updatedAt
+  created_at               DateTime  @default(now())
+
+  user                     User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Trade {
+  id               String    @id @default(uuid())
+  user_id          String
+  underlying       String
+  instrument_type  String
+  strike_price     Int?
+  expiry_date      DateTime  @db.Date
+  action           String
+  entry_datetime   DateTime  @db.Timestamptz
+  exit_datetime    DateTime  @db.Timestamptz
+  entry_price      Decimal   @db.Decimal(10, 2)
+  exit_price       Decimal   @db.Decimal(10, 2)
+  lots             Int
+  lot_size         Int
+  brokerage        Decimal   @default(0) @db.Decimal(10, 2)
+  stt              Decimal   @default(0) @db.Decimal(10, 2)
+  exchange_charges Decimal   @default(0) @db.Decimal(10, 2)
+  gst              Decimal   @default(0) @db.Decimal(10, 2)
+  sebi_charges     Decimal   @default(0) @db.Decimal(10, 2)
+  gross_pnl        Decimal?  @db.Decimal(10, 2) // We'll compute this in app or let db default handle it. In prisma it's easier to compute in app and store it.
+  net_pnl          Decimal?  @db.Decimal(10, 2)
+  strategy_tag     String?
+  notes            String?
+  screenshot_url   String?
+  updated_at       DateTime  @default(now()) @updatedAt
+  created_at       DateTime  @default(now())
+
+  user             User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, entry_datetime(sort: Desc)])
+  @@index([user_id, expiry_date])
+  @@index([user_id, underlying])
+  @@map("trades")
+}
