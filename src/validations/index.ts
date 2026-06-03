@@ -12,7 +12,7 @@ export const loginSchema = z.object({
 });
 
 export const tradeSchema = z.object({
-  underlying: z.enum(['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'STOCK']),
+  underlying: z.string().min(1),
   instrument_type: z.enum(['CE', 'PE', 'FUT']),
   strike_price: z.number().optional().nullable(),
   expiry_date: z.string().or(z.date()),

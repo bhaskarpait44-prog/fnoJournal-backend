@@ -7,6 +7,8 @@ import userRoutes from './routes/user';
 import tradeRoutes from './routes/trades';
 import subscriptionRoutes from './routes/subscriptions';
 import analyticsRoutes from './routes/analytics';
+import webhookRoutes from './routes/webhooks';
+import symbolRoutes from './routes/symbols';
 import { errorHandler } from './middleware/error-handler';
 
 dotenv.config();
@@ -25,6 +27,10 @@ app.use(cors({
   },
   credentials: true,
 }));
+
+// Route for Razorpay webhooks (before express.json() if we needed raw body, but Razorpay works with JSON if verification is done on body string)
+app.use('/api/webhooks', webhookRoutes);
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -34,6 +40,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/trades', tradeRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/symbols', symbolRoutes);
 
 app.use(errorHandler);
 

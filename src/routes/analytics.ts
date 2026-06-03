@@ -4,27 +4,79 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+const getDateFilter = (range?: string) => {
+  if (!range || range === 'all') return {};
+
+  const now = new Date();
+  let gteDate: Date;
+
+  switch (range) {
+    case 'month':
+      gteDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      break;
+    case '30d':
+      gteDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      break;
+    case '3m':
+      gteDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      break;
+    case 'year':
+      gteDate = new Date(now.getFullYear(), 0, 1);
+      break;
+    default:
+      return {};
+  }
+
+  return { gte: gteDate };
+};
+
 router.get('/summary', authenticateToken, async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.id;
+    const range = req.query.range as string;
+    const dateFilter = getDateFilter(range);
+
     const trades = await prisma.trade.findMany({ 
-      where: { user_id: userId } 
+      where: { 
+        user_id: userId,
+        entry_datetime: dateFilter
+      } 
     });
-    
+
     let totalPnl = 0;
     let winCount = 0;
     let totalProfit = 0;
     let totalLoss = 0;
-    
+    let maxDrawdown = 0;
+    let runningPnl = 0;
+    let peak = 0;
+    let bestDay = 0;
+    const dailyPnL: Record<string, number> = {};
+
     trades.forEach(t => {
       const netPnl = t.net_pnl ? Number(t.net_pnl) : 0;
       totalPnl += netPnl;
+
       if (netPnl > 0) {
         winCount++;
         totalProfit += netPnl;
       } else if (netPnl < 0) {
         totalLoss += Math.abs(netPnl);
       }
+
+      // Daily best day calculation
+      const dateKey = t.entry_datetime.toISOString().split('T')[0];
+      dailyPnL[dateKey] = (dailyPnL[dateKey] || 0) + netPnl;
+
+      // Drawdown calculation
+      runningPnl += netPnl;
+      if (runningPnl > peak) peak = runningPnl;
+      const dd = peak - runningPnl;
+      if (dd > maxDrawdown) maxDrawdown = dd;
+    });
+
+    Object.values(dailyPnL).forEach(pnl => {
+      if (pnl > bestDay) bestDay = pnl;
     });
 
     const winRate = trades.length > 0 ? (winCount / trades.length) * 100 : 0;
@@ -36,6 +88,10 @@ router.get('/summary', authenticateToken, async (req: AuthRequest, res) => {
         winRate: winRate.toFixed(1) + '%',
         netPnl: totalPnl,
         profitFactor: profitFactor.toFixed(2),
+        avgWinner: winCount > 0 ? totalProfit / winCount : 0,
+        avgLoser: (trades.length - winCount) > 0 ? totalLoss / (trades.length - winCount) : 0,
+        maxDrawdown,
+        bestDay
       }
     });
   } catch (error) {
@@ -47,16 +103,26 @@ router.get('/summary', authenticateToken, async (req: AuthRequest, res) => {
 router.get('/pnl-history', authenticateToken, async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.id;
+    const range = req.query.range as string;
+    const dateFilter = getDateFilter(range);
+
     const trades = await prisma.trade.findMany({
-      where: { user_id: userId },
+      where: { 
+        user_id: userId,
+        entry_datetime: dateFilter
+      },
       orderBy: { entry_datetime: 'asc' },
       select: { entry_datetime: true, net_pnl: true }
     });
 
-    const history = trades.map(t => ({
-      date: t.entry_datetime.toISOString().split('T')[0],
-      pnl: Number(t.net_pnl || 0)
-    }));
+    let runningPnl = 0;
+    const history = trades.map(t => {
+      runningPnl += Number(t.net_pnl || 0);
+      return {
+        date: t.entry_datetime.toISOString().split('T')[0],
+        profit: runningPnl
+      };
+    });
 
     res.json({ data: history });
   } catch (error) {
@@ -98,6 +164,27 @@ router.get('/strategy-performance', authenticateToken, async (req: AuthRequest, 
   } catch (error) {
     console.error('Strategy performance error:', error);
     res.status(500).json({ error: 'Error fetching strategy performance' });
+  }
+});
+
+router.get('/daily-pnl', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const trades = await prisma.trade.findMany({
+      where: { user_id: userId },
+      select: { entry_datetime: true, net_pnl: true }
+    });
+
+    const dailyPnL: Record<string, number> = {};
+    trades.forEach(t => {
+      const dateKey = t.entry_datetime.toISOString().split('T')[0];
+      dailyPnL[dateKey] = (dailyPnL[dateKey] || 0) + Number(t.net_pnl || 0);
+    });
+
+    res.json({ data: dailyPnL });
+  } catch (error) {
+    console.error('Daily PnL error:', error);
+    res.status(500).json({ error: 'Error fetching daily pnl' });
   }
 });
 
